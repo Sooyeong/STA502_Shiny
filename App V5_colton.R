@@ -136,8 +136,13 @@ server <- function(input, output) {
     ggradar(avg_value)
   })
   
+  # function to normalize data
+  normalize <- function(x) {
+    (x - min(x))/(diff(range(x)))
+  }
+  
   output$timeseries <- renderPlot({
-    req(input$genre, input$artist2)
+    req(input$genre, input$artist2, input$feature)
     ggplot()
     data_artist <- music_clean %>%
       filter(artist_name %in% input$artist2) %>% 
@@ -145,9 +150,11 @@ server <- function(input, output) {
                                                  "loudness", "speechiness",
                                                  "acousticness", "instrumentalness",
                                                  "liveness", "valence", "tempo")) %>% 
-      filter(feature %in% input$feature)
-    # !!!!!!!!!!!!!!!!!!!!!!!! MUTATE STATEMENT TO TRASNFORM DATA TO [0,1] SCALE
-    
+      filter(feature %in% input$feature) %>% 
+      group_by(artist_name, album_name, feature) %>% 
+      mutate(value = normalize(value)) %>% 
+      ungroup
+
     p1 <- ggplot() +
       geom_boxplot(aes_string(x="release_date", y="value",
                               color="artist_name", group="release_date"),
