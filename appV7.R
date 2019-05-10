@@ -1,10 +1,24 @@
+# READ ME --------------------
+
+# Brief escription of app
+# This app was built to explore and find trends within the features of some of the most popular mnusic
+# (first tab) A radar plot compares all features available for desired genres
+# (second tab) Parallel coordinate plots compare features for different artists across their albums
+# (third tab) Box plots for selected features compare trends within a single artist over time
+
+# Data description
+# Data was obtained by scraping Spotifies database through their API
+# We collected song level data for each song on every album from the top 25 artists within each genre (23 genres in total)
+# Variables included genre, artist name, artist popularity, album name, album release date,
+# -> track names and scores for audio features of each track, which are somehow computed by Spotify
+
 # Load packages ----------------------------------------------------------
 library(tidyverse)
 library(shiny)
-library(ggradar)
 library(plotly)
 library(GGally)
 library(scales)
+library(ggradar)
 
 # Load data ----------------------------------------------------------
 # 
@@ -25,6 +39,9 @@ normalize <- function(x) {
   (x - min(x))/(diff(range(x)))
 }
 
+music_clean <- music_clean %>% 
+  mutate_at(vars(danceability:tempo), normalize)
+
 # data preparation for radar plots
 avg_value <- music_clean %>%
   group_by(genre) %>%
@@ -36,11 +53,12 @@ theme_set(theme_bw())
 # Define UI -----------------------------
 
 ## Give label to genre
-choice <- unique(music_clean$genre)
+choice <- sort(unique(music_clean$genre))
 
 # Give label to audio features
 choice_feature <- c("danceability","energy","loudness","speechiness",
-                    "acousticness","instrumentalness","tempo")
+                    "acousticness","instrumentalness","tempo", "valence","liveness")
+choice_feature <- sort(choice_feature)
 
 ### Define UI for application
 ui <- fluidPage(
@@ -163,28 +181,17 @@ server <- function(input, output) {
       filter(artist_name == input$artist2 | artist_name == input$artist3,
              album_name %in% input$album2 | album_name %in% input$album3) %>%
       group_by(album_name, artist_name) %>%
-      summarize_at(vars(danceability:tempo), mean)
-  
-      # construct parcoord plot but don't display it
-      p2 <- ggparcoord(data=data_album_avg,
-                       columns = input$feature2,
-                       groupColumn = "artist_name",
-                       scale = "uniminmax",
-                       order = "skewness")   # order=skewness prevents errors when 
-                                             # changing user inputs
-      # extract dataset from ggparcoord object
-      pardata <- p2$data
-      
-      # use ggparcoord data to construct new data.frame to be used with ggplot
-      df <- data.frame(x=pardata$variable, y=pardata$value,
-                       album=data_album_avg$album_name,
-                       artist=data_album_avg$artist_name)
-      
-      # construct parcoord plot using ggplot and data from ggparcoord
-      ggplotly(ggplot(aes(color=artist), data=df) +
-                 geom_line(aes(x=x, y=y, group=album), size=1.5) +
-                 theme_minimal()+
-                 theme(axis.title=element_blank()))
+      summarize_at(vars(danceability:tempo), mean) %>% 
+      gather(danceability:tempo, key="feature", value="value") %>% 
+      filter(feature %in% input$feature2) %>% 
+      ungroup()
+    
+    ggplotly(ggplot(aes(color=artist_name), data=data_album_avg) +
+               geom_line(aes(x=feature, y=value, group=album_name), size=1.5) +
+               ylim(c(0,1)) +
+               labs(color="Artist") +
+               theme_minimal() +
+               theme(axis.title=element_blank())) 
     
   })
   
@@ -205,8 +212,7 @@ server <- function(input, output) {
                                                  "liveness", "valence", "tempo")) %>% 
       filter(feature %in% input$feature) %>%            # filter for selected feature(s)
       mutate(feature = str_to_title(feature)) %>%       # capitalize features to look nicer on plot
-      group_by(artist_name, axisLabel, feature) %>% 
-      mutate(value = normalize(value)) %>%              # normalize values for plotting
+      group_by(artist_name, axisLabel, feature) %>%      
       ungroup()
     
     p1 <- ggplot(data=data_artist) +
